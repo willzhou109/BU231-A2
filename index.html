@@ -174,17 +174,25 @@
      STATE
   --------------------------------------------------------- */
   const state = {
-    classification: null,          // 'employee' | 'independent' | 'dependent' (computed from classFactors)
+    termsAccepted: false,
+    termsInputValue: '',
+    classificationMode: null,      // 'guided' | 'manual'
+    manualClassification: null,    // 'employee' | 'dependent' | 'independent'
+    classification: null,          // 'employee' | 'independent' | 'dependent' (computed from classFactors, or manually chosen)
     classFactors: { control:null, toolsProvided:null, exclusivity:null, integration:null, riskOfLoss:null },
     contractType: null,            // 'fixed' | 'indefinite'
     fixedTermExpired: null,        // 'yes' | 'no'
     hasTerminationClause: null,    // 'yes' | 'no'
     clauseCompliant: null,         // 'yes' | 'no' | 'unsure'
     grounds: null,                 // 'nocause' | 'misconduct' | 'insubordination' | 'incompetence' | 'illness'
-    misconduct: { severity:null, harm:null, codeKnown:null, condoned:null, investigated:null },
+    misconduct: {
+      severity:null, harm:null, codeKnown:null, employeeAwareOfCode:null,
+      priorSimilarConduct:null, priorConductHandling:null,
+      investigationConducted:null, investigationUnbiased:null, employeeGivenOpportunity:null
+    },
     insubordination: { lawfulOrder:null, reasonable:null, willfulRefusal:null, priorHistory:null, explicitWarning:null },
-    incompetence: { skillCommunicated:null, reviews:null, training:null, condoned:null },
-    illness: { canPerformEssential:null, accommodationAttempted:null, undueHardship:null },
+    incompetence: { skillCommunicated:null, standardsObjective:null, reviews:null, training:null, explicitJobRiskWarning:null, warningSpecific:null, condoned:null },
+    illness: { canPerformEssential:null, permanentOrRecurring:null, accommodationAttempted:null, alternativePositionsConsidered:null, undueHardship:null },
     discipline: { formalWarning:null, chanceToRespond:null, chanceToImprove:null, consistent:null },
     manner: { private:null, respectful:null, noPressure:null, noBadFaith:null },
     emp: { years:null, age:null, level:null, availability:null, payrollOver2_5M:null, weeklyPay:null, fixedTermRemainderMonths:null }
@@ -201,6 +209,8 @@
   // engine sees the answer immediately on click rather than only after the
   // step's validate() runs on Next.
   const FIELD_SETTERS = {
+    classificationMode: v => state.classificationMode = v,
+    manualClassification: v => { state.manualClassification = v; state.classification = v; },
     control: v => state.classFactors.control = v,
     toolsProvided: v => state.classFactors.toolsProvided = v,
     exclusivity: v => state.classFactors.exclusivity = v,
@@ -214,18 +224,28 @@
     severity: v => state.misconduct.severity = v,
     harm: v => state.misconduct.harm = v,
     codeKnown: v => state.misconduct.codeKnown = v,
-    condoned: v => { if(state.grounds === 'incompetence') state.incompetence.condoned = v; else state.misconduct.condoned = v; },
-    investigated: v => state.misconduct.investigated = v,
+    employeeAwareOfCode: v => state.misconduct.employeeAwareOfCode = v,
+    priorSimilarConduct: v => state.misconduct.priorSimilarConduct = v,
+    priorConductHandling: v => state.misconduct.priorConductHandling = v,
+    investigationConducted: v => state.misconduct.investigationConducted = v,
+    investigationUnbiased: v => state.misconduct.investigationUnbiased = v,
+    employeeGivenOpportunity: v => state.misconduct.employeeGivenOpportunity = v,
     lawfulOrder: v => state.insubordination.lawfulOrder = v,
     reasonable: v => state.insubordination.reasonable = v,
     willfulRefusal: v => state.insubordination.willfulRefusal = v,
     priorHistory: v => state.insubordination.priorHistory = v,
     explicitWarning: v => state.insubordination.explicitWarning = v,
     skillCommunicated: v => state.incompetence.skillCommunicated = v,
+    standardsObjective: v => state.incompetence.standardsObjective = v,
     reviews: v => state.incompetence.reviews = v,
     training: v => state.incompetence.training = v,
+    explicitJobRiskWarning: v => state.incompetence.explicitJobRiskWarning = v,
+    warningSpecific: v => state.incompetence.warningSpecific = v,
+    condoned: v => state.incompetence.condoned = v,
     canPerformEssential: v => state.illness.canPerformEssential = v,
+    permanentOrRecurring: v => state.illness.permanentOrRecurring = v,
     accommodationAttempted: v => state.illness.accommodationAttempted = v,
+    alternativePositionsConsidered: v => state.illness.alternativePositionsConsidered = v,
     undueHardship: v => state.illness.undueHardship = v,
     formalWarning: v => state.discipline.formalWarning = v,
     chanceToRespond: v => state.discipline.chanceToRespond = v,
@@ -289,6 +309,56 @@
     if(f) f.classList.add('has-error');
   }
 
+  /* ---------- STEP: terms of service (home page gate) ---------- */
+  const REQUIRED_TERMS_PHRASE = 'I accept the terms above';
+  const stepTerms = {
+    id:'terms',
+    applicable: ()=>true,
+    render(el){
+      el.innerHTML = `
+        <h2>Welcome</h2>
+        <p class="sub">Please read and accept the terms below before using the Termination Compliance Navigator.</p>
+        <div class="inline-danger">
+          <span class="ic">&#9888;</span>
+          <span>This app provides automated information, <strong>NOT formal legal advice</strong>. The outputs may be inaccurate. By using this application, you completely waive the right to sue for any damages resulting from reliance on this output. Read our full <a href="#" id="fullTermsToggle">Limitation of Liability Terms</a>.</span>
+        </div>
+        <div id="fullTermsBox" class="suggestion-box" style="display:none;margin-top:12px;">
+          <strong>Limitation of Liability &amp; Terms of Service (full text)</strong>
+          <ol style="padding-left:18px;font-size:.85rem;margin-bottom:0;">
+            <li><strong>No Legal Advice.</strong> This tool is an educational decision-support prototype built for a business law course assignment. It does not provide legal advice and does not create a lawyer-client or advisory relationship of any kind.</li>
+            <li><strong>No Warranty.</strong> The tool, its calculations, and its outputs are provided "as is" without warranty of any kind, express or implied, including as to accuracy, completeness, or fitness for a particular purpose.</li>
+            <li><strong>Assumption of Risk.</strong> Employment law is fact-specific and jurisdiction-specific, and legislation and case law change over time. This tool may be outdated, incomplete, or wrong.</li>
+            <li><strong>Waiver and Release.</strong> To the fullest extent permitted by law, by using this application you release Definitely-Not-Evil-Corp Inc., its developers, and all associated parties from any and all claims, liabilities, damages, losses, or expenses arising out of or in any way connected with your use of, or reliance on, this application or its output.</li>
+            <li><strong>Independent Verification Required.</strong> Before making any termination decision, you must consult a licensed employment lawyer and independently verify all legal principles, case citations, and statutory references against primary sources.</li>
+            <li><strong>Acceptance.</strong> Continued use of this application after this point constitutes acceptance of these terms.</li>
+          </ol>
+        </div>
+        <div class="field" data-field="termsAccept" style="margin-top:18px;">
+          <label class="qlabel">Type "${REQUIRED_TERMS_PHRASE}" to continue</label>
+          <input type="text" id="termsInput" placeholder="${REQUIRED_TERMS_PHRASE}" autocomplete="off" value="${state.termsInputValue}">
+          <div class="error-text">Please type the phrase exactly as shown to continue.</div>
+        </div>
+      `;
+      const toggle = el.querySelector('#fullTermsToggle');
+      const box = el.querySelector('#fullTermsBox');
+      toggle.addEventListener('click', (e)=>{ e.preventDefault(); box.style.display = box.style.display === 'none' ? 'block' : 'none'; });
+      const input = el.querySelector('#termsInput');
+      input.addEventListener('input', ()=>{
+        state.termsInputValue = input.value;
+        if(input.value.trim() === REQUIRED_TERMS_PHRASE) clearError('termsAccept');
+        refreshNextButton();
+      });
+    },
+    isNextDisabled(){
+      return state.termsInputValue.trim() !== REQUIRED_TERMS_PHRASE;
+    },
+    validate(){
+      if(state.termsInputValue.trim() !== REQUIRED_TERMS_PHRASE){ markError('termsAccept'); return false; }
+      state.termsAccepted = true;
+      return true;
+    }
+  };
+
   /* ---------- STEP: intro ---------- */
   const stepIntro = {
     id:'intro',
@@ -316,45 +386,89 @@
       const f = state.classFactors;
       el.innerHTML = `
         <h2>1. Worker classification</h2>
-        <p class="sub">Employment law obligations only attach to certain relationships. Answer these based on the real substance of the relationship, not the label in any contract — courts look past labels to the common-law control / tools / exclusivity test.</p>
-        <div class="field" data-field="control">
-          <label class="qlabel">Does the business control how, when, and where the work is done, rather than the worker deciding for themselves?</label>
-          ${radioGroup('control', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], f.control)}
+        <p class="sub">Employment law obligations only attach to certain relationships. If classification is already clear, select it directly. Otherwise, answer a few questions about the real substance of the relationship and the tool will suggest a classification — courts look past labels in a contract to the common-law control / tools / exclusivity test.</p>
+        <div class="field" data-field="classificationMode">
+          <label class="qlabel">Do you already know how this worker should be classified?</label>
+          ${radioGroup('classificationMode', [
+            {value:'manual', title:'Yes — I will select it myself'},
+            {value:'guided', title:'No — help me determine it', sub:'Recommended if you are unsure.'}
+          ], state.classificationMode)}
         </div>
-        <div class="field" data-field="toolsProvided">
-          <label class="qlabel">Does the business supply the main tools, equipment, or systems used to do the work?</label>
-          ${radioGroup('toolsProvided', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], f.toolsProvided)}
-        </div>
-        <div class="field" data-field="exclusivity">
-          <label class="qlabel">Does the worker work exclusively, or near-exclusively, for this business (rather than serving multiple clients)?</label>
-          ${radioGroup('exclusivity', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], f.exclusivity)}
-        </div>
-        <div class="field" data-field="integration">
-          <label class="qlabel">Is the worker integrated into the business (company email/title, attends staff meetings, presented to the public as part of the team)?</label>
-          ${radioGroup('integration', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], f.integration)}
-        </div>
-        <div class="field" data-field="riskOfLoss">
-          <label class="qlabel">Does the worker carry meaningful financial risk of loss or a genuine chance of profit from how efficiently they perform the work — the way an independent business owner would?</label>
-          ${radioGroup('riskOfLoss', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], f.riskOfLoss)}
-        </div>
-        <div id="classSuggestion"></div>
+        <div id="classModeBody"></div>
       `;
       bindRadioSelection(el);
 
-      function renderSuggestion(){
-        const box = el.querySelector('#classSuggestion');
-        const result = computeClassification();
-        if(!result){ box.innerHTML = ''; return; }
-        box.innerHTML = `
-          <div class="suggestion-box">
-            Based on your answers (${result.score}/5 factors point toward an employment relationship): suggested classification is
-            <span class="verdict">${CLASS_LABEL[result.cls]}</span>.
-          </div>`;
+      function renderModeBody(){
+        const wrap = el.querySelector('#classModeBody');
+        if(state.classificationMode === 'manual'){
+          wrap.innerHTML = `
+            <div class="field" data-field="manualClassification">
+              <label class="qlabel">Select the worker's classification</label>
+              ${radioGroup('manualClassification', [
+                {value:'employee', title:'Employee', sub:'Business controls how, when, and where the work is done; worker is integrated into the workplace.'},
+                {value:'dependent', title:'Dependent contractor', sub:'Economically reliant on this business, works near-exclusively for it, but is not a full employee.'},
+                {value:'independent', title:'Independent contractor', sub:'Operates their own business, works for multiple clients, controls their own tools, time, and methods.'}
+              ], state.manualClassification)}
+            </div>`;
+          bindRadioSelection(wrap);
+        } else if(state.classificationMode === 'guided'){
+          const cf = state.classFactors;
+          wrap.innerHTML = `
+            <div class="field" data-field="control">
+              <label class="qlabel">Does the business control how, when, and where the work is done, rather than the worker deciding for themselves?</label>
+              ${radioGroup('control', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], cf.control)}
+            </div>
+            <div class="field" data-field="toolsProvided">
+              <label class="qlabel">Does the business supply the main tools, equipment, or systems used to do the work?</label>
+              ${radioGroup('toolsProvided', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], cf.toolsProvided)}
+            </div>
+            <div class="field" data-field="exclusivity">
+              <label class="qlabel">Does the worker work exclusively, or near-exclusively, for this business (rather than serving multiple clients)?</label>
+              ${radioGroup('exclusivity', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], cf.exclusivity)}
+            </div>
+            <div class="field" data-field="integration">
+              <label class="qlabel">Is the worker integrated into the business (company email/title, attends staff meetings, presented to the public as part of the team)?</label>
+              ${radioGroup('integration', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], cf.integration)}
+            </div>
+            <div class="field" data-field="riskOfLoss">
+              <label class="qlabel">Does the worker carry meaningful financial risk of loss or a genuine chance of profit from how efficiently they perform the work — the way an independent business owner would?</label>
+              ${radioGroup('riskOfLoss', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], cf.riskOfLoss)}
+            </div>
+            <div id="classSuggestion"></div>
+          `;
+          bindRadioSelection(wrap);
+          function renderSuggestion(){
+            const box = wrap.querySelector('#classSuggestion');
+            const result = computeClassification();
+            if(!result){ box.innerHTML = ''; return; }
+            box.innerHTML = `
+              <div class="suggestion-box">
+                Based on your answers (${result.score}/5 factors point toward an employment relationship): suggested classification is
+                <span class="verdict">${CLASS_LABEL[result.cls]}</span>.
+              </div>`;
+          }
+          wrap.querySelectorAll('.opt input[type=radio]').forEach(i => i.addEventListener('change', renderSuggestion));
+          renderSuggestion();
+        } else {
+          wrap.innerHTML = '';
+        }
       }
-      el.querySelectorAll('.opt input[type=radio]').forEach(i => i.addEventListener('change', renderSuggestion));
-      renderSuggestion();
+      el.querySelectorAll('input[name=classificationMode]').forEach(i=>i.addEventListener('change', ()=>{ state.classificationMode = i.value; renderModeBody(); renderRiskPanel(); }));
+      renderModeBody();
     },
     validate(){
+      const mode = document.querySelector('input[name="classificationMode"]:checked');
+      if(!mode){ markError('classificationMode'); return false; }
+      state.classificationMode = mode.value;
+
+      if(state.classificationMode === 'manual'){
+        const v = document.querySelector('input[name="manualClassification"]:checked');
+        if(!v){ markError('manualClassification'); return false; }
+        state.manualClassification = v.value;
+        state.classification = v.value;
+        return true;
+      }
+
       let ok = true;
       ['control','toolsProvided','exclusivity','integration','riskOfLoss'].forEach(name=>{
         const v = document.querySelector(`input[name="${name}"]:checked`);
@@ -564,26 +678,86 @@
           <label class="qlabel">Was there a known policy / code of conduct that this conduct clearly violated?</label>
           ${radioGroup('codeKnown', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], m.codeKnown)}
         </div>
-        <div class="field" data-field="condoned">
-          <label class="qlabel">Has similar conduct occurred before and been tolerated (condoned) by management?</label>
-          ${radioGroup('condoned', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], m.condoned)}
+        <div class="field" data-field="employeeAwareOfCode">
+          <label class="qlabel">Was the employee made aware of the code of conduct (e.g. training, signed acknowledgment, handbook distribution)?</label>
+          ${radioGroup('employeeAwareOfCode', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], m.employeeAwareOfCode)}
         </div>
-        <div class="field" data-field="investigated">
-          <label class="qlabel">Was the incident properly investigated (facts gathered, employee given a chance to respond) before deciding to dismiss?</label>
-          ${radioGroup('investigated', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], m.investigated)}
+        <div class="field" data-field="priorSimilarConduct">
+          <label class="qlabel">Has similar conduct occurred before?</label>
+          ${radioGroup('priorSimilarConduct', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], m.priorSimilarConduct)}
+        </div>
+        <div id="priorConductFollowUp"></div>
+        <div class="field" data-field="investigationConducted">
+          <label class="qlabel">Was a formal investigation conducted before the decision to dismiss?</label>
+          ${radioGroup('investigationConducted', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], m.investigationConducted)}
+        </div>
+        <div id="investigationUnbiasedFollowUp"></div>
+        <div class="field" data-field="employeeGivenOpportunity">
+          <label class="qlabel">Was the employee given an opportunity to respond to the allegations before dismissal?</label>
+          ${radioGroup('employeeGivenOpportunity', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], m.employeeGivenOpportunity)}
         </div>
       `;
       bindRadioSelection(el);
-      ['severity','harm','codeKnown','condoned','investigated'].forEach(name=>{
+      ['severity','harm','codeKnown','employeeAwareOfCode','priorSimilarConduct','investigationConducted','employeeGivenOpportunity'].forEach(name=>{
         el.querySelectorAll(`input[name=${name}]`).forEach(i=>i.addEventListener('change', renderRiskPanel));
       });
+
+      function renderPriorConductFollowUp(){
+        const wrap = el.querySelector('#priorConductFollowUp');
+        if(state.misconduct.priorSimilarConduct === 'yes'){
+          wrap.innerHTML = `
+            <div class="field" data-field="priorConductHandling">
+              <label class="qlabel">Did the company take disciplinary action at the time, or was it ignored?</label>
+              ${radioGroup('priorConductHandling', [
+                {value:'action', title:'Disciplinary action was taken'},
+                {value:'ignored', title:'It was ignored / tolerated'}
+              ], m.priorConductHandling)}
+            </div>`;
+          bindRadioSelection(wrap);
+          wrap.querySelectorAll('input[name=priorConductHandling]').forEach(i=>i.addEventListener('change', renderRiskPanel));
+        } else {
+          wrap.innerHTML = '';
+          state.misconduct.priorConductHandling = null;
+        }
+      }
+      function renderInvestigationUnbiasedFollowUp(){
+        const wrap = el.querySelector('#investigationUnbiasedFollowUp');
+        if(state.misconduct.investigationConducted === 'yes'){
+          wrap.innerHTML = `
+            <div class="field" data-field="investigationUnbiased">
+              <label class="qlabel">Was the investigation objective and unbiased (no predetermined outcome)?</label>
+              ${radioGroup('investigationUnbiased', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], m.investigationUnbiased)}
+            </div>`;
+          bindRadioSelection(wrap);
+          wrap.querySelectorAll('input[name=investigationUnbiased]').forEach(i=>i.addEventListener('change', renderRiskPanel));
+        } else {
+          wrap.innerHTML = '';
+          state.misconduct.investigationUnbiased = null;
+        }
+      }
+      renderPriorConductFollowUp();
+      renderInvestigationUnbiasedFollowUp();
+      el.querySelectorAll('input[name=priorSimilarConduct]').forEach(i=>i.addEventListener('change', ()=>{ state.misconduct.priorSimilarConduct = i.value; renderPriorConductFollowUp(); renderRiskPanel(); }));
+      el.querySelectorAll('input[name=investigationConducted]').forEach(i=>i.addEventListener('change', ()=>{ state.misconduct.investigationConducted = i.value; renderInvestigationUnbiasedFollowUp(); renderRiskPanel(); }));
     },
     validate(){
       let ok = true;
-      ['severity','harm','codeKnown','condoned','investigated'].forEach(name=>{
+      ['severity','harm','codeKnown','employeeAwareOfCode','priorSimilarConduct','investigationConducted','employeeGivenOpportunity'].forEach(name=>{
         const v = document.querySelector(`input[name="${name}"]:checked`);
         if(!v){ markError(name); ok=false; } else { state.misconduct[name] = v.value; }
       });
+      if(state.misconduct.priorSimilarConduct === 'yes'){
+        const v = document.querySelector('input[name="priorConductHandling"]:checked');
+        if(!v){ markError('priorConductHandling'); ok=false; } else { state.misconduct.priorConductHandling = v.value; }
+      } else {
+        state.misconduct.priorConductHandling = null;
+      }
+      if(state.misconduct.investigationConducted === 'yes'){
+        const v = document.querySelector('input[name="investigationUnbiased"]:checked');
+        if(!v){ markError('investigationUnbiased'); ok=false; } else { state.misconduct.investigationUnbiased = v.value; }
+      } else {
+        state.misconduct.investigationUnbiased = null;
+      }
       return ok;
     }
   };
@@ -597,6 +771,10 @@
       el.innerHTML = `
         <h2>Insubordination — details</h2>
         <p class="sub">Courts require a lawful, reasonable order, a wilful refusal, and — except in extreme cases — a clear prior warning that the worker's job was at risk.</p>
+        <div class="inline-warning">
+          <span class="ic">&#9888;</span>
+          <span>Employees have the right to refuse work they <strong>believe</strong> is unsafe. Before treating a refusal as insubordination, confirm it is not a protected safety refusal — see <a href="https://www.ontario.ca/laws/statute/90o01#BK89" target="_blank" rel="noopener">Occupational Health and Safety Act, R.S.O. 1990, c. O.1, Part V — Right to Refuse or to Stop Work Where Health or Safety in Danger</a>.</span>
+        </div>
         <div class="field" data-field="lawfulOrder">
           <label class="qlabel">Was a lawful order given (within the scope of the worker's job duties, not illegal or unsafe)?</label>
           ${radioGroup('lawfulOrder', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], s.lawfulOrder)}
@@ -646,6 +824,10 @@
           <label class="qlabel">Was the required skill/performance standard clearly communicated (e.g. in the job posting, offer, or performance plan)?</label>
           ${radioGroup('skillCommunicated', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], c.skillCommunicated)}
         </div>
+        <div class="field" data-field="standardsObjective">
+          <label class="qlabel">Are these performance standards objective, reasonable, and consistent with what is expected of other employees in similar roles?</label>
+          ${radioGroup('standardsObjective', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], c.standardsObjective)}
+        </div>
         <div class="field" data-field="reviews">
           <label class="qlabel">Have performance reviews or documented feedback identified this shortfall?</label>
           ${radioGroup('reviews', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], c.reviews)}
@@ -654,22 +836,51 @@
           <label class="qlabel">Was adequate training and support provided to help the worker meet the standard?</label>
           ${radioGroup('training', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], c.training)}
         </div>
+        <div class="field" data-field="explicitJobRiskWarning">
+          <label class="qlabel">Was the employee warned in clear, explicit terms that their job was at risk if performance did not improve?</label>
+          ${radioGroup('explicitJobRiskWarning', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], c.explicitJobRiskWarning)}
+        </div>
+        <div id="warningSpecificFollowUp"></div>
         <div class="field" data-field="condoned">
           <label class="qlabel">Has this level of performance been tolerated for a long period without being raised (condonation)?</label>
           ${radioGroup('condoned', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], c.condoned)}
         </div>
       `;
       bindRadioSelection(el);
-      ['skillCommunicated','reviews','training','condoned'].forEach(name=>{
+      ['skillCommunicated','standardsObjective','reviews','training','explicitJobRiskWarning','condoned'].forEach(name=>{
         el.querySelectorAll(`input[name=${name}]`).forEach(i=>i.addEventListener('change', renderRiskPanel));
       });
+
+      function renderWarningSpecificFollowUp(){
+        const wrap = el.querySelector('#warningSpecificFollowUp');
+        if(state.incompetence.explicitJobRiskWarning === 'yes'){
+          wrap.innerHTML = `
+            <div class="field" data-field="warningSpecific">
+              <label class="qlabel">Was that warning specific (not just general criticism)?</label>
+              ${radioGroup('warningSpecific', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], c.warningSpecific)}
+            </div>`;
+          bindRadioSelection(wrap);
+          wrap.querySelectorAll('input[name=warningSpecific]').forEach(i=>i.addEventListener('change', renderRiskPanel));
+        } else {
+          wrap.innerHTML = '';
+          state.incompetence.warningSpecific = null;
+        }
+      }
+      renderWarningSpecificFollowUp();
+      el.querySelectorAll('input[name=explicitJobRiskWarning]').forEach(i=>i.addEventListener('change', ()=>{ state.incompetence.explicitJobRiskWarning = i.value; renderWarningSpecificFollowUp(); renderRiskPanel(); }));
     },
     validate(){
       let ok = true;
-      ['skillCommunicated','reviews','training','condoned'].forEach(name=>{
+      ['skillCommunicated','standardsObjective','reviews','training','explicitJobRiskWarning','condoned'].forEach(name=>{
         const v = document.querySelector(`input[name="${name}"]:checked`);
         if(!v){ markError(name); ok=false; } else { state.incompetence[name] = v.value; }
       });
+      if(state.incompetence.explicitJobRiskWarning === 'yes'){
+        const v = document.querySelector('input[name="warningSpecific"]:checked');
+        if(!v){ markError('warningSpecific'); ok=false; } else { state.incompetence.warningSpecific = v.value; }
+      } else {
+        state.incompetence.warningSpecific = null;
+      }
       return ok;
     }
   };
@@ -687,9 +898,17 @@
           <label class="qlabel">Even with reasonable accommodation, can the worker perform the essential duties of the role?</label>
           ${radioGroup('canPerformEssential', [{value:'yes',title:'Yes'},{value:'no',title:'No'},{value:'unknown',title:'Unknown / not yet assessed'}], ill.canPerformEssential)}
         </div>
+        <div class="field" data-field="permanentOrRecurring">
+          <label class="qlabel">Is the condition permanent or constantly recurring (not a temporary or short-term illness)?</label>
+          ${radioGroup('permanentOrRecurring', [{value:'yes',title:'Yes'},{value:'no',title:'No'},{value:'unsure',title:'Unsure / not yet known'}], ill.permanentOrRecurring)}
+        </div>
         <div class="field" data-field="accommodationAttempted">
           <label class="qlabel">Has the business explored and attempted reasonable accommodation (modified duties, schedule, equipment, leave)?</label>
           ${radioGroup('accommodationAttempted', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], ill.accommodationAttempted)}
+        </div>
+        <div class="field" data-field="alternativePositionsConsidered">
+          <label class="qlabel">Were all alternative positions within the organization considered as part of accommodation?</label>
+          ${radioGroup('alternativePositionsConsidered', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], ill.alternativePositionsConsidered)}
         </div>
         <div class="field" data-field="undueHardship">
           <label class="qlabel">Would further accommodation cause the business genuine undue hardship (documented, not assumed)?</label>
@@ -697,13 +916,13 @@
         </div>
       `;
       bindRadioSelection(el);
-      ['canPerformEssential','accommodationAttempted','undueHardship'].forEach(name=>{
+      ['canPerformEssential','permanentOrRecurring','accommodationAttempted','alternativePositionsConsidered','undueHardship'].forEach(name=>{
         el.querySelectorAll(`input[name=${name}]`).forEach(i=>i.addEventListener('change', renderRiskPanel));
       });
     },
     validate(){
       let ok = true;
-      ['canPerformEssential','accommodationAttempted','undueHardship'].forEach(name=>{
+      ['canPerformEssential','permanentOrRecurring','accommodationAttempted','alternativePositionsConsidered','undueHardship'].forEach(name=>{
         const v = document.querySelector(`input[name="${name}"]:checked`);
         if(!v){ markError(name); ok=false; } else { state.illness[name] = v.value; }
       });
@@ -780,7 +999,7 @@
           ${radioGroup('noPressure', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], mn.noPressure)}
         </div>
         <div class="field" data-field="noBadFaith">
-          <label class="qlabel">Is the decision free of any bad-faith motive (e.g. timed to avoid a bonus, commission, or vesting date; or based on a discriminatory ground)?</label>
+          <label class="qlabel">Is the decision free of any bad-faith motive (e.g. timed to avoid a bonus, commission, or vesting date; based on a discriminatory ground; or retaliatory — did the employee recently file a harassment complaint, raise a safety concern, or assert a legal right?)?</label>
           ${radioGroup('noBadFaith', [{value:'yes',title:'Yes'},{value:'no',title:'No'}], mn.noBadFaith)}
         </div>
       `;
@@ -909,7 +1128,7 @@
   };
 
   const ALL_STEPS = [
-    stepIntro, stepClassification, stepResultIndependent,
+    stepTerms, stepIntro, stepClassification, stepResultIndependent,
     stepContractTerms, stepResultFixedExpired, stepGrounds,
     stepMisconduct, stepInsubordination, stepIncompetence, stepIllness,
     stepDiscipline, stepManner, stepEmpInfo, stepResults
@@ -968,13 +1187,22 @@
       if(ill.accommodationAttempted !== 'yes'){
         reasons.push('No documented attempt at accommodation — this is very likely a human rights violation, not a valid basis for dismissal.');
       }
+      if(ill.alternativePositionsConsidered !== 'yes'){
+        reasons.push('Alternative positions within the organization were not considered — this is part of the duty to accommodate, and its absence weakens the employer\'s position.');
+      }
       if(ill.canPerformEssential === 'yes'){
         reasons.push('Worker can perform essential duties with accommodation — dismissal is not justified.');
-      } else if(ill.canPerformEssential === 'no' && ill.accommodationAttempted === 'yes' && ill.undueHardship === 'yes'){
-        reasons.push('Accommodation attempted, worker cannot perform essential duties, and undue hardship is documented — this may support frustration of contract, but the bar is very high.');
-        verdict = 'moderate';
+      } else if(ill.canPerformEssential === 'no'){
+        if(ill.permanentOrRecurring !== 'yes'){
+          reasons.push('The condition appears temporary or short-term rather than permanent or constantly recurring — a temporary inability to work generally cannot support dismissal or frustration of contract.');
+        } else if(ill.accommodationAttempted === 'yes' && ill.alternativePositionsConsidered === 'yes' && ill.undueHardship === 'yes'){
+          reasons.push('Condition is permanent/recurring, accommodation and alternative positions were explored, and undue hardship is documented — this may support frustration of contract, but the bar is very high.');
+          verdict = 'moderate';
+        } else {
+          reasons.push('Undue hardship, accommodation, or consideration of alternative positions is incomplete or undocumented — do not proceed without a complete accommodation analysis.');
+        }
       } else {
-        reasons.push('Undue hardship is unsure/undocumented, or accommodation is incomplete — do not proceed without a documented accommodation and hardship analysis.');
+        reasons.push('Whether the worker can perform essential duties (with accommodation) has not been assessed — do not proceed until this is properly determined, typically with medical documentation.');
       }
       return { verdict, reasons, isIllness:true };
     }
@@ -993,8 +1221,16 @@
       maxPoints += 3;
       if(m.harm === 'yes'){ points += 1; reasons.push('Conduct caused documented harm.'); } maxPoints += 1;
       if(m.codeKnown === 'yes'){ points += 1; reasons.push('A known policy was clearly violated.'); } maxPoints += 1;
-      if(m.condoned === 'yes'){ points -= 2; reasons.push('Similar conduct was previously condoned — this significantly weakens cause.'); }
-      if(m.investigated === 'no'){ points -= 1; reasons.push('No proper investigation was conducted — procedural fairness gap increases risk.'); }
+      if(m.employeeAwareOfCode === 'yes'){ points += 1; reasons.push('The employee had been made aware of the code of conduct.'); }
+      else { points -= 1; reasons.push('The employee was not shown to have been made aware of the code of conduct — this weakens reliance on a policy violation.'); }
+      maxPoints += 1;
+      const priorCondoned = m.priorSimilarConduct === 'yes' && m.priorConductHandling === 'ignored';
+      if(priorCondoned){ points -= 2; reasons.push('Similar conduct occurred before and was ignored/tolerated by management (condonation) — this significantly weakens cause.'); }
+      else if(m.priorSimilarConduct === 'yes' && m.priorConductHandling === 'action'){ points += 1; reasons.push('Similar prior conduct was disciplined at the time, showing consistent enforcement.'); maxPoints += 1; }
+      if(m.investigationConducted === 'no'){ points -= 1; reasons.push('No formal investigation was conducted — procedural fairness gap increases risk.'); }
+      else if(m.investigationUnbiased === 'no'){ points -= 1; reasons.push('The investigation was not objective/unbiased — a predetermined outcome undermines procedural fairness.'); }
+      maxPoints += 1;
+      if(m.employeeGivenOpportunity === 'no'){ points -= 1; reasons.push('The employee was not given an opportunity to respond to the allegations — this is a core procedural fairness requirement.'); }
       maxPoints += 1;
     }
 
@@ -1016,10 +1252,21 @@
       const c = state.incompetence;
       if(c.skillCommunicated === 'yes'){ points += 1; } else { reasons.push('The required standard was not clearly communicated — a core requirement for cause based on incompetence.'); }
       maxPoints += 1;
+      if(c.standardsObjective === 'yes'){ points += 1; reasons.push('Performance standards are objective and applied consistently to similar roles.'); } else { reasons.push('Performance standards are not objective or consistent with those applied to similar roles — this undermines the fairness of the standard and raises discrimination risk.'); }
+      maxPoints += 1;
       if(c.reviews === 'yes'){ points += 1; reasons.push('Performance shortfall is documented through reviews/feedback.'); } else { reasons.push('No documented performance reviews — hard to prove the standard and the shortfall.'); }
       maxPoints += 1;
       if(c.training === 'yes'){ points += 1; reasons.push('Adequate training/support was provided.'); } else { reasons.push('Adequate training was not provided — employer bears some responsibility for the shortfall.'); }
       maxPoints += 1;
+      if(c.explicitJobRiskWarning === 'yes'){
+        points += 2; reasons.push('Employee was warned in clear, explicit terms that their job was at risk.');
+        if(c.warningSpecific === 'yes'){ points += 1; reasons.push('The warning was specific, not just general criticism.'); }
+        else { points -= 1; reasons.push('The warning given was only general criticism, not specific — vague warnings are less likely to satisfy what courts expect before a performance-based dismissal.'); }
+        maxPoints += 1;
+      } else {
+        reasons.push('No explicit warning that the job was at risk for continued poor performance — courts generally require this before dismissing for incompetence.');
+      }
+      maxPoints += 2;
       if(c.condoned === 'yes'){ points -= 2; reasons.push('Performance issue was tolerated for a long period without being raised (condonation) — this weakens cause considerably.'); }
     }
 
@@ -1060,6 +1307,10 @@
       warnings.push({text:'Dependent contractors are not covered by ESA statutory notice/severance, but are entitled to reasonable notice at common law — misclassifying as a pure independent contractor is a common compliance failure.', level:'warn'});
     }
 
+    if(state.classification === 'employee' && state.emp.years !== null && state.emp.years < 0.25){
+      warnings.push({text:'This worker has been continuously employed for less than three months. Under s. 54 of the Employment Standards Act, 2000, S.O. 2000, c. 41, statutory notice/termination pay generally does not apply until an employee has been continuously employed for three months or more. Common-law reasonable notice can still apply from the first day of employment (though typically modest for very short service), and any written probationary clause should be reviewed.', level:'warn'});
+    }
+
     if(state.hasTerminationClause === 'yes' && (state.clauseCompliant === 'no' || state.clauseCompliant === 'unsure')){
       warnings.push({text:'The termination clause is unreviewed or known to be non-compliant. Ontario courts have voided termination clauses for even minor drafting defects (see Waksdale v. Swegon North America Inc., 2020 ONCA 391) — do not rely on this clause to limit notice until it is reviewed.', level:'danger'});
     }
@@ -1070,8 +1321,12 @@
 
     if(state.grounds === 'misconduct'){
       const m = state.misconduct;
-      if(m.condoned === 'yes') warnings.push({text:'Prior condonation of similar misconduct significantly weakens the case for dismissal with cause now.', level:'danger'});
-      if(m.investigated === 'no') warnings.push({text:'No investigation was conducted — this creates procedural fairness risk even if the underlying conduct is serious.', level:'warn'});
+      const priorCondoned = m.priorSimilarConduct === 'yes' && m.priorConductHandling === 'ignored';
+      if(priorCondoned) warnings.push({text:'Similar conduct occurred before and was ignored/tolerated — prior condonation significantly weakens the case for dismissal with cause now.', level:'danger'});
+      if(m.employeeAwareOfCode === 'no') warnings.push({text:'The employee was not shown to have been made aware of the code of conduct — this weakens reliance on a policy violation as grounds for cause.', level:'warn'});
+      if(m.investigationConducted === 'no') warnings.push({text:'No formal investigation was conducted — this creates procedural fairness risk even if the underlying conduct is serious.', level:'warn'});
+      if(m.investigationConducted === 'yes' && m.investigationUnbiased === 'no') warnings.push({text:'The investigation was not objective/unbiased — an investigation with a predetermined outcome can itself support a wrongful dismissal or bad-faith claim.', level:'danger'});
+      if(m.employeeGivenOpportunity === 'no') warnings.push({text:'The employee was not given a chance to respond to the allegations before dismissal — this procedural gap significantly increases wrongful dismissal risk.', level:'danger'});
       if(m.severity !== 'severe' && stepDiscipline.applicable() && (state.discipline.formalWarning === 'no' || state.discipline.chanceToImprove === 'no')){
         warnings.push({text:'For non-severe misconduct, dismissing without progressive discipline substantially raises wrongful dismissal risk.', level:'danger'});
       }
@@ -1086,12 +1341,17 @@
     if(state.grounds === 'incompetence'){
       const c = state.incompetence;
       if(c.skillCommunicated === 'no') warnings.push({text:'The required performance standard was never clearly communicated — a foundational requirement for cause based on incompetence.', level:'danger'});
+      if(c.standardsObjective === 'no') warnings.push({text:'Performance standards are not objective or consistently applied to similar roles — this can support a discrimination or unequal-treatment claim in addition to weakening cause.', level:'warn'});
+      if(c.explicitJobRiskWarning === 'no') warnings.push({text:'No explicit warning that the job was at risk for poor performance — this is often fatal to a just-cause defence for incompetence, similar to insubordination.', level:'danger'});
+      if(c.explicitJobRiskWarning === 'yes' && c.warningSpecific === 'no') warnings.push({text:'The performance warning given was general criticism, not specific — vague warnings are unlikely to satisfy what courts expect before a performance-based dismissal.', level:'warn'});
       if(c.condoned === 'yes') warnings.push({text:'Long-tolerated performance issues (condonation) are difficult to suddenly rely on for cause.', level:'warn'});
     }
 
     if(state.grounds === 'illness'){
       const ill = state.illness;
       if(ill.accommodationAttempted !== 'yes') warnings.push({text:'No documented accommodation attempt. Dismissing (or failing to accommodate) an employee with an illness/disability without this can trigger a human rights complaint under the Ontario Human Rights Code, independent of any wrongful dismissal claim.', level:'danger'});
+      if(ill.alternativePositionsConsidered === 'no') warnings.push({text:'Alternative positions within the organization were not considered — this is part of the duty to accommodate under the Ontario Human Rights Code.', level:'warn'});
+      if(ill.permanentOrRecurring === 'no' && ill.canPerformEssential === 'no') warnings.push({text:'The condition appears temporary, not permanent or constantly recurring — treating the contract as frustrated for a temporary illness is high-risk and generally not legally supportable.', level:'danger'});
       if(ill.undueHardship === 'unsure') warnings.push({text:'Undue hardship has not been documented. "Undue hardship" is a high legal bar (cost, health, safety) — an assumption is not sufficient.', level:'warn'});
     }
 
@@ -1156,7 +1416,9 @@
     if(state.classification === 'employee'){
       const esaDollar = weeklyPay && esaWeeks !== null ? ` (${currency(esaWeeks * weeklyPay)})` : '';
       const sevDollar = weeklyPay && sevWeeks > 0 ? ` (${currency(sevWeeks * weeklyPay)})` : '';
-      stats.push({num: esaWeeks === null ? '—' : `${esaWeeks} wk${esaDollar}`, lbl:'ESA minimum notice'});
+      const underThreeMonths = state.emp.years !== null && state.emp.years < 0.25;
+      const esaLabel = 'ESA minimum notice' + (underThreeMonths ? ' (n/a — under 3 months, ESA s. 54)' : '');
+      stats.push({num: esaWeeks === null ? '—' : `${esaWeeks} wk${esaDollar}`, lbl: esaLabel});
       stats.push({num: sevWeeks > 0 ? `${sevWeeks} wk${sevDollar}` : '0 wk', lbl:'ESA statutory severance'});
     } else if(state.classification === 'dependent'){
       stats.push({num:'N/A', lbl:'ESA minimum notice (contractors not covered)'});
@@ -1279,6 +1541,7 @@
       card.appendChild(nav);
       document.getElementById('nextBtn').addEventListener('click', goNext);
       if(currentIndex>0) document.getElementById('backBtn').addEventListener('click', goBack);
+      refreshNextButton();
     } else if(step.id !== 'results'){
       const nav = document.createElement('div');
       nav.className = 'nav-row';
@@ -1311,16 +1574,29 @@
     renderCard();
   }
 
+  function refreshNextButton(){
+    const btn = document.getElementById('nextBtn');
+    if(!btn) return;
+    const step = order[currentIndex];
+    btn.disabled = !!(step && step.isNextDisabled && step.isNextDisabled());
+  }
+
   function restartAll(){
     Object.assign(state, {
+      termsAccepted:false, termsInputValue:'',
+      classificationMode:null, manualClassification:null,
       classification:null,
       classFactors:{control:null,toolsProvided:null,exclusivity:null,integration:null,riskOfLoss:null},
       contractType:null, fixedTermExpired:null,
       hasTerminationClause:null, clauseCompliant:null, grounds:null,
-      misconduct:{severity:null,harm:null,codeKnown:null,condoned:null,investigated:null},
+      misconduct:{
+        severity:null, harm:null, codeKnown:null, employeeAwareOfCode:null,
+        priorSimilarConduct:null, priorConductHandling:null,
+        investigationConducted:null, investigationUnbiased:null, employeeGivenOpportunity:null
+      },
       insubordination:{lawfulOrder:null,reasonable:null,willfulRefusal:null,priorHistory:null,explicitWarning:null},
-      incompetence:{skillCommunicated:null,reviews:null,training:null,condoned:null},
-      illness:{canPerformEssential:null,accommodationAttempted:null,undueHardship:null},
+      incompetence:{skillCommunicated:null,standardsObjective:null,reviews:null,training:null,explicitJobRiskWarning:null,warningSpecific:null,condoned:null},
+      illness:{canPerformEssential:null,permanentOrRecurring:null,accommodationAttempted:null,alternativePositionsConsidered:null,undueHardship:null},
       discipline:{formalWarning:null,chanceToRespond:null,chanceToImprove:null,consistent:null},
       manner:{private:null,respectful:null,noPressure:null,noBadFaith:null},
       emp:{years:null,age:null,level:null,availability:null,payrollOver2_5M:null,weeklyPay:null,fixedTermRemainderMonths:null}
