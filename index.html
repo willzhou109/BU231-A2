@@ -311,6 +311,9 @@
 
   /* ---------- STEP: terms of service (home page gate) ---------- */
   const REQUIRED_TERMS_PHRASE = 'I accept the terms above';
+  function termsPhraseMatches(v){
+    return v.trim().toLowerCase() === REQUIRED_TERMS_PHRASE.toLowerCase();
+  }
   const stepTerms = {
     id:'terms',
     applicable: ()=>true,
@@ -345,15 +348,15 @@
       const input = el.querySelector('#termsInput');
       input.addEventListener('input', ()=>{
         state.termsInputValue = input.value;
-        if(input.value.trim() === REQUIRED_TERMS_PHRASE) clearError('termsAccept');
+        if(termsPhraseMatches(input.value)) clearError('termsAccept');
         refreshNextButton();
       });
     },
     isNextDisabled(){
-      return state.termsInputValue.trim() !== REQUIRED_TERMS_PHRASE;
+      return !termsPhraseMatches(state.termsInputValue);
     },
     validate(){
-      if(state.termsInputValue.trim() !== REQUIRED_TERMS_PHRASE){ markError('termsAccept'); return false; }
+      if(!termsPhraseMatches(state.termsInputValue)){ markError('termsAccept'); return false; }
       state.termsAccepted = true;
       return true;
     }
@@ -1605,12 +1608,26 @@
     renderCard();
   }
 
+  // Progress is tracked against a fixed set of logical phases rather than the
+  // raw (dynamically branching) step list, so the "Step X of Y" total doesn't
+  // jump around as conditional steps appear/disappear based on answers.
+  const STEP_PHASE = {
+    terms:0, intro:1,
+    classification:2, result_independent:2,
+    contract_terms:3, result_fixed_expired:3,
+    grounds:4,
+    misconduct_details:5, insubordination_details:5, incompetence_details:5, illness_details:5,
+    discipline:6, manner:7, emp_info:8, results:9
+  };
+  const TOTAL_PHASES = 10;
+
   function updateProgress(){
-    const total = Math.max(order.length, 1);
-    const pct = Math.round(((currentIndex+1) / total) * 100);
+    const step = order[currentIndex];
+    const phase = step && STEP_PHASE[step.id] !== undefined ? STEP_PHASE[step.id] : 0;
+    const pct = Math.round(((phase+1) / TOTAL_PHASES) * 100);
     document.getElementById('progressFill').style.width = pct + '%';
-    document.getElementById('progressText').textContent = `Step ${currentIndex+1} of ${total}`;
-    document.getElementById('progressStepPill').textContent = order[currentIndex] ? order[currentIndex].id.replace(/_/g,' ') : '';
+    document.getElementById('progressText').textContent = `Step ${phase+1} of ${TOTAL_PHASES}`;
+    document.getElementById('progressStepPill').textContent = step ? step.id.replace(/_/g,' ') : '';
   }
 
   /* init */
